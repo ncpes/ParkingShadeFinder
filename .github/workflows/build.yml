@@ -14,6 +14,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Find and extract project ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'ParkingShadeFinder*.zip' | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "找不到 ParkingShadeFinder ZIP"
+            exit 1
+          fi
+          echo "使用 ZIP: $ZIP_FILE"
+          unzip -q "$ZIP_FILE"
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -25,18 +35,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extract project ZIP
-        run: |
-          rm -rf project
-          mkdir project
-          unzip -q ParkingShadeFinder-upload-easy.zip -d project
-
       - name: Build APK
-        working-directory: project/ParkingShadeFinder
+        working-directory: ParkingShadeFinder
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ParkingShadeFinder-debug-apk
-          path: project/ParkingShadeFinder/app/build/outputs/apk/debug/*.apk
+          name: ParkingShadeFinder-v0.3.0-debug
+          path: ParkingShadeFinder/app/build/outputs/apk/debug/*.apk

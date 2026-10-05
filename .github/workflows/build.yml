@@ -80,13 +80,16 @@ jobs:
           set -euo pipefail
 
           echo "===== 驗證 App 版本 ====="
-          grep -E "versionCode|versionName" app/build.gradle
+
+          VERSION_NAME=$(grep -oE "versionName ['\"][^'\"]+['\"]" app/build.gradle | head -n 1 | sed -E "s/.*versionName ['\"]([^'\"]+)['\"].*/\1/")
+
+          echo "Detected versionName: $VERSION_NAME"
 
           echo "===== 驗證 App 名稱 ====="
           grep -E 'android:label' app/src/main/AndroidManifest.xml
 
-          if ! grep -q "versionName '0.3.5'" app/build.gradle; then
-            echo "ERROR: App 版本不是 0.3.5"
+          if [ -z "$VERSION_NAME" ]; then
+            echo "ERROR: 找不到 versionName"
             exit 1
           fi
 
@@ -96,6 +99,9 @@ jobs:
           fi
 
           echo "===== 版本與 App 名稱驗證成功 ====="
+          echo "App version: $VERSION_NAME"
+
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -126,6 +132,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: iCar遮陽停車-v0.3.5-debug
+          name: iCar遮陽停車-${{ env.VERSION_NAME }}-debug
           path: ParkingShadeFinder/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

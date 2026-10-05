@@ -18,40 +18,60 @@ jobs:
         shell: bash
         run: |
           set -e
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'iCar遮陽停車-v*.zip' | sort -V | tail -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "找不到 iCar遮陽停車 ZIP"
+
+          mapfile -t ZIP_FILES < <(find . -maxdepth 1 -type f -name 'iCar遮陽停車-v*.zip' | sort)
+
+          if [ "${#ZIP_FILES[@]}" -eq 0 ]; then
+            echo "ERROR: 找不到 iCar遮陽停車 ZIP"
             exit 1
           fi
+
+          if [ "${#ZIP_FILES[@]}" -gt 1 ]; then
+            echo "ERROR: 根目錄有多個 iCar ZIP，請只保留一個："
+            printf ' - %s\n' "${ZIP_FILES[@]}"
+            exit 1
+          fi
+
+          ZIP_FILE="${ZIP_FILES[0]}"
           echo "使用 ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Remove old project
-        run: rm -rf ParkingShadeFinder
+        shell: bash
+        run: |
+          rm -rf ParkingShadeFinder
 
       - name: Extract latest project
-        run: unzip -q "$ZIP_FILE"
-
-      - name: Verify app version and name
-        working-directory: ParkingShadeFinder
         shell: bash
         run: |
           set -e
-          echo "檢查 App 版本..."
-          grep -n "versionName" app/build.gradle
-          grep -n "versionCode" app/build.gradle
-          grep -n "iCar遮陽停車" app/src/main/AndroidManifest.xml || true
+          unzip -q "$ZIP_FILE" -x '.github/*'
+          echo "Project extracted successfully."
 
-          VERSION=$(grep "versionName" app/build.gradle | sed -E "s/.*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/" | head -n 1)
-          if [ -z "$VERSION" ]; then
-            echo "無法讀取 versionName"
+          if [ ! -d "ParkingShadeFinder" ]; then
+            echo "ERROR: ZIP 解壓後找不到 ParkingShadeFinder 專案資料夾"
             exit 1
           fi
-          echo "確認版本：$VERSION"
-          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
 
-          if ! grep -Rqs "iCar遮陽停車" app/src/main; then
-            echo "錯誤：找不到 App 名稱 iCar遮陽停車"
+      - name: Verify app version and name
+        shell: bash
+        working-directory: ParkingShadeFinder
+        run: |
+          set -e
+
+          VERSION_NAME=$(grep -oE "versionName ['\"][^'\"]+['\"]" app/build.gradle | head -n 1 | sed -E "s/.*versionName ['\"]([^'\"]+)['\"].*/\1/")
+          APP_NAME=$(grep -oE "app_name.*>[^<]+<" app/src/main/res/values/strings.xml | head -n 1 | sed -E 's/.*>([^<]+)<.*/\1/')
+
+          echo "Detected versionName: $VERSION_NAME"
+          echo "Detected app name: $APP_NAME"
+
+          if [ "$VERSION_NAME" != "0.3.5" ]; then
+            echo "ERROR: 版本不是 0.3.5"
+            exit 1
+          fi
+
+          if [ "$APP_NAME" != "iCar遮陽停車" ]; then
+            echo "ERROR: App 名稱不是 iCar遮陽停車"
             exit 1
           fi
 
@@ -69,11 +89,11 @@ jobs:
       - name: Clean and build APK
         working-directory: ParkingShadeFinder
         run: |
-          gradle clean
-          gradle assembleDebug --no-daemon
+          gradle clean assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: iCar遮陽停車-v${{ env.APP_VERSION }}-debug
+          name: iCar遮陽停車-v0.3.5-debug
           path: ParkingShadeFinder/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

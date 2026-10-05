@@ -17,12 +17,16 @@ jobs:
       - name: Find latest iCar ZIP
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          mapfile -t ZIP_FILES < <(find . -maxdepth 1 -type f -name 'iCar遮陽停車-v*.zip' | sort)
+          mapfile -t ZIP_FILES < <(
+            find . -maxdepth 1 -type f \
+              \( -iname 'iCar*.zip' -o -iname 'ParkingShadeFinder*.zip' \) \
+              -print
+          )
 
           if [ "${#ZIP_FILES[@]}" -eq 0 ]; then
-            echo "ERROR: 找不到 iCar遮陽停車 ZIP"
+            echo "ERROR: 找不到 iCar 遮陽停車 ZIP"
             exit 1
           fi
 
@@ -33,23 +37,39 @@ jobs:
           fi
 
           ZIP_FILE="${ZIP_FILES[0]}"
+
           echo "使用 ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Remove old project
         shell: bash
         run: |
+          set -euo pipefail
           rm -rf ParkingShadeFinder
 
       - name: Extract latest project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
           unzip -q "$ZIP_FILE" -x '.github/*'
+
           echo "Project extracted successfully."
 
           if [ ! -d "ParkingShadeFinder" ]; then
             echo "ERROR: ZIP 解壓後找不到 ParkingShadeFinder 專案資料夾"
+            echo "目前根目錄內容："
+            ls -la
+            exit 1
+          fi
+
+          if [ ! -f "ParkingShadeFinder/app/build.gradle" ]; then
+            echo "ERROR: 找不到 app/build.gradle"
+            exit 1
+          fi
+
+          if [ ! -f "ParkingShadeFinder/app/src/main/AndroidManifest.xml" ]; then
+            echo "ERROR: 找不到 AndroidManifest.xml"
             exit 1
           fi
 
@@ -57,23 +77,25 @@ jobs:
         shell: bash
         working-directory: ParkingShadeFinder
         run: |
-          set -e
+          set -euo pipefail
 
-          VERSION_NAME=$(grep -oE "versionName ['\"][^'\"]+['\"]" app/build.gradle | head -n 1 | sed -E "s/.*versionName ['\"]([^'\"]+)['\"].*/\1/")
-          APP_NAME=$(grep -oE "app_name.*>[^<]+<" app/src/main/res/values/strings.xml | head -n 1 | sed -E 's/.*>([^<]+)<.*/\1/')
+          echo "===== 驗證 App 版本 ====="
+          grep -E "versionCode|versionName" app/build.gradle
 
-          echo "Detected versionName: $VERSION_NAME"
-          echo "Detected app name: $APP_NAME"
+          echo "===== 驗證 App 名稱 ====="
+          grep -E 'android:label' app/src/main/AndroidManifest.xml
 
-          if [ "$VERSION_NAME" != "0.3.5" ]; then
-            echo "ERROR: 版本不是 0.3.5"
+          if ! grep -q "versionName '0.3.5'" app/build.gradle; then
+            echo "ERROR: App 版本不是 0.3.5"
             exit 1
           fi
 
-          if [ "$APP_NAME" != "iCar遮陽停車" ]; then
+          if ! grep -q 'android:label="iCar遮陽停車"' app/src/main/AndroidManifest.xml; then
             echo "ERROR: App 名稱不是 iCar遮陽停車"
             exit 1
           fi
+
+          echo "===== 版本與 App 名稱驗證成功 ====="
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -88,8 +110,18 @@ jobs:
 
       - name: Clean and build APK
         working-directory: ParkingShadeFinder
+        shell: bash
         run: |
-          gradle clean assembleDebug --no-daemon
+          set -euo pipefail
+
+          echo "===== 開始清理舊建置 ====="
+          gradle clean --no-daemon
+
+          echo "===== 開始建置 APK ====="
+          gradle assembleDebug --no-daemon
+
+          echo "===== APK 建置完成 ====="
+          ls -lh app/build/outputs/apk/debug/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -14,15 +14,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find and extract project ZIP
+      - name: Find latest iCar ZIP
+        shell: bash
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'ParkingShadeFinder*.zip' | head -n 1)
+          set -e
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'iCar遮陽停車-v*.zip' | sort -V | tail -n 1)
           if [ -z "$ZIP_FILE" ]; then
-            echo "找不到 ParkingShadeFinder ZIP"
+            echo "找不到 iCar遮陽停車 ZIP"
             exit 1
           fi
           echo "使用 ZIP: $ZIP_FILE"
-          unzip -q "$ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Remove old project
+        run: rm -rf ParkingShadeFinder
+
+      - name: Extract latest project
+        run: unzip -q "$ZIP_FILE"
+
+      - name: Verify app version and name
+        working-directory: ParkingShadeFinder
+        shell: bash
+        run: |
+          set -e
+          echo "檢查 App 版本..."
+          grep -n "versionName" app/build.gradle
+          grep -n "versionCode" app/build.gradle
+          grep -n "iCar遮陽停車" app/src/main/AndroidManifest.xml || true
+
+          VERSION=$(grep "versionName" app/build.gradle | sed -E "s/.*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/" | head -n 1)
+          if [ -z "$VERSION" ]; then
+            echo "無法讀取 versionName"
+            exit 1
+          fi
+          echo "確認版本：$VERSION"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          if ! grep -Rqs "iCar遮陽停車" app/src/main; then
+            echo "錯誤：找不到 App 名稱 iCar遮陽停車"
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -35,12 +66,14 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
+      - name: Clean and build APK
         working-directory: ParkingShadeFinder
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle clean
+          gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ParkingShadeFinder-v0.3.0-debug
+          name: iCar遮陽停車-v${{ env.APP_VERSION }}-debug
           path: ParkingShadeFinder/app/build/outputs/apk/debug/*.apk
